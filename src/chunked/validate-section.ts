@@ -116,6 +116,23 @@ export function validateSection(
     }
   }
 
+  // ── 합니다체 enforcement ─────────────────────────────────────────────────
+  // Korean sentences ending in 해라체 (plain form) are flagged.
+  // Pattern: sentence ends with 다. but NOT preceded by 합니/습니/입니 (합니다체).
+  // Threshold: if >30% of sentences use 해라체, it's an error.
+  // Code blocks (```...```) are excluded to avoid false positives.
+  const CODEBLOCK_RE = /```[\s\S]*?```/g;
+  for (const sub of section.subsections) {
+    const proseOnly = sub.bodyKo.replace(CODEBLOCK_RE, "");
+    const haeraCnt = (proseOnly.match(/(?<![합습입]니)다\./g) ?? []).length;
+    const totalSentences = (proseOnly.match(/[.!?]\s/g) ?? []).length || 1;
+    if (haeraCnt / totalSentences > 0.3) {
+      errors.push(
+        `${sub.subsectionId} (${section.sectionId}): bodyKo uses 해라체 endings (${haeraCnt} occurrences out of ~${totalSentences} sentences). Use 합니다체 (formal polite): ~합니다, ~됩니다, ~있습니다.`,
+      );
+    }
+  }
+
   // ── Escaped newline padding detection ─────────────────────────────────────
   // Catches bodyKo that uses literal "\\n" sequences to pad content instead of
   // real line breaks. This indicates raw string concatenation padding.

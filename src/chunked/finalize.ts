@@ -13,12 +13,10 @@ import {
 } from "../orchestration/package-delivery";
 import { extractSectionEvidenceFromAcceptedOutput } from "../freshness/section-evidence";
 import { loadFreshnessState, saveFreshnessState } from "../freshness/state";
-import type { S3JsonAdapter } from "../shared/s3-storage";
 
 export interface FinalizeOptions {
   advanceBaseline: boolean;
   statePath: string;
-  s3FreshnessOptions?: { adapter: S3JsonAdapter; key: string };
 }
 
 export interface FinalizeResult {
@@ -159,7 +157,7 @@ export async function finalize(
   plan: SectionPlanOutput,
   options: FinalizeOptions,
 ): Promise<FinalizeResult> {
-  const { advanceBaseline, statePath, s3FreshnessOptions } = options;
+  const { advanceBaseline, statePath } = options;
 
   // 1. Verify all sections are persisted
   const pendingSections = Object.entries(session.sections)
@@ -191,7 +189,7 @@ export async function finalize(
   if (advanceBaseline) {
     try {
       const evidence = extractSectionEvidenceFromAcceptedOutput(acceptedOutput);
-      const state = await loadFreshnessState(statePath, s3FreshnessOptions);
+      const state = await loadFreshnessState(statePath);
       const repoRef = session.repoFullName.toLowerCase();
 
       const nextState = {
@@ -206,7 +204,7 @@ export async function finalize(
         },
       };
 
-      await saveFreshnessState(statePath, nextState, s3FreshnessOptions);
+      await saveFreshnessState(statePath, nextState);
       process.stderr.write(`  ✓ freshness baseline → ${session.commitSha.slice(0, 7)}\n`);
     } catch (err) {
       process.stderr.write(
