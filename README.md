@@ -50,7 +50,7 @@ git checkout public
 git pull origin public
 
 # package.json version과 태그는 일치해야 합니다.
-git tag v0.1.0
+git tag v0.1.1
 git push origin public --follow-tags
 ```
 
