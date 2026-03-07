@@ -16,9 +16,8 @@
 
 ## 📦 설치 (Installation)
 
-portki를 사용하려면 **Node.js 20 이상**이 필요합니다.
+**Node.js 20 이상**이 필요합니다.
 
-자주 사용하신다면 전역으로 설치하는 것을 권장합니다.
 ```bash
 npm install -g @devport-kr/portki
 portki help
@@ -33,7 +32,7 @@ portki doctor
 
 ## 🚀 빠른 시작 (Quick Start)
 
-portki는 주요 3사 Coding AI CLI 완벽하게 연동됩니다. 한 번의 어댑터 설치로 에이전트 내에서 직접 명령어를 실행할 수 있습니다.
+portki는 주요 3사의 Coding CLI들과 완벽하게 연동됩니다. 한 번의 어댑터 설치로 에이전트 내에서 직접 명령어를 실행할 수 있습니다.
 
 > 💡 **안내:** 아래 명령어들에 사용된 `devport-kr/portki`는 예시 저장소입니다. 실제로 위키를 생성하고자 하는 대상 GitHub 저장소(예: `facebook/react`, `owner/repo`)로 변경하여 실행해 주세요.
 
