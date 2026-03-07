@@ -2,7 +2,6 @@
 
 **portki**는 **ports** + **wiki** 의 합성어로 ['포트키(Portkey)'](https://en.wikipedia.org/wiki/Magical_objects_in_Harry_Potter#Portkeys)처럼 순간이동해 다양한 AI 프로젝트를 만날 수 있는 Agent 입니다. [devport](https://devport.kr)의 [ports](https://devport.kr/ports)에 있는 모든 위키를 책임지고 있습니다.
 
-이 `public` 브랜치는 공개 GitHub 저장소를 대상으로 하며, DB, 임베딩, OpenAI API, `.env` 설정 없이 동작하도록 정리했습니다. 최종 결과물은 `devport-output/wiki/{owner}/{repo}/` 아래의 순수 Markdown 파일로 생성됩니다.
 
 ## 주요 기능
 
