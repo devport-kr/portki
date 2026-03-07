@@ -1,0 +1,174 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create, for example v0.2.0"
+        required: true
+      target:
+        description: "Branch or commit to release from"
+        required: true
+        default: "public"
+      prerelease:
+        description: "Mark the release as a prerelease"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Resolve release metadata
+        id: meta
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_TAG: ${{ github.ref_name }}
+          PUSH_SHA: ${{ github.sha }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_TARGET: ${{ inputs.target }}
+          INPUT_PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            TAG="$PUSH_TAG"
+            TARGET_REF="$PUSH_SHA"
+            TARGET_SHA="$PUSH_SHA"
+            if [[ "$TAG" == *-* ]]; then
+              PRERELEASE=true
+            else
+              PRERELEASE=false
+            fi
+          else
+            TAG="$INPUT_TAG"
+            git fetch origin "$INPUT_TARGET" --depth=1 || true
+
+            if git rev-parse --verify --quiet "$INPUT_TARGET" >/dev/null; then
+              TARGET_SHA="$(git rev-parse "$INPUT_TARGET")"
+            elif git rev-parse --verify --quiet "origin/$INPUT_TARGET" >/dev/null; then
+              TARGET_SHA="$(git rev-parse "origin/$INPUT_TARGET")"
+            else
+              echo "Unable to resolve target ref: $INPUT_TARGET" >&2
+              exit 1
+            fi
+
+            TARGET_REF="$TARGET_SHA"
+            PRERELEASE="$INPUT_PRERELEASE"
+          fi
+
+          git fetch origin public --depth=1
+          if git merge-base --is-ancestor "$TARGET_SHA" origin/public; then
+            ELIGIBLE=true
+          else
+            ELIGIBLE=false
+          fi
+
+          VERSION="${TAG#v}"
+          ARCHIVE_BASENAME="portki-${VERSION}"
+
+          {
+            echo "tag=$TAG"
+            echo "target_ref=$TARGET_REF"
+            echo "target_sha=$TARGET_SHA"
+            echo "prerelease=$PRERELEASE"
+            echo "eligible=$ELIGIBLE"
+            echo "archive_basename=$ARCHIVE_BASENAME"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Skip non-public release target
+        if: steps.meta.outputs.eligible != 'true'
+        run: |
+          echo "Release target ${{ steps.meta.outputs.target_sha }} is not contained in origin/public."
+          echo "Skipping GitHub Release creation."
+
+      - name: Install dependencies
+        if: steps.meta.outputs.eligible == 'true'
+        run: npm ci
+
+      - name: Run tests
+        if: steps.meta.outputs.eligible == 'true'
+        run: npm test
+
+      - name: Build release archives
+        if: steps.meta.outputs.eligible == 'true'
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          TARGET_SHA: ${{ steps.meta.outputs.target_sha }}
+          ARCHIVE_BASENAME: ${{ steps.meta.outputs.archive_basename }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+          PREFIX="${ARCHIVE_BASENAME}/"
+
+          git archive --format=tar --prefix="$PREFIX" "$TARGET_SHA" | gzip -9 > "dist/${ARCHIVE_BASENAME}.tar.gz"
+          git archive --format=zip --prefix="$PREFIX" -o "dist/${ARCHIVE_BASENAME}.zip" "$TARGET_SHA"
+          npm pack --pack-destination dist
+
+          (
+            cd dist
+            sha256sum ./* > "${ARCHIVE_BASENAME}-checksums.txt"
+          )
+
+      - name: Create or update GitHub Release
+        if: steps.meta.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          TARGET_REF: ${{ steps.meta.outputs.target_ref }}
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+            exit 0
+          fi
+
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            args=(
+              release create "$TAG"
+              dist/*
+              --title "$TAG"
+              --generate-notes
+              --verify-tag
+            )
+          else
+            args=(
+              release create "$TAG"
+              dist/*
+              --title "$TAG"
+              --target "$TARGET_REF"
+              --generate-notes
+            )
+          fi
+
+          if [[ "$PRERELEASE" == "true" ]]; then
+            args+=(--prerelease)
+          fi
+
+          gh "${args[@]}"

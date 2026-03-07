@@ -21,6 +21,41 @@ npm install
 
 공개 버전에서는 `.env`를 만들 필요가 없습니다.
 
+출시 후에는 로컬 clone 없이도 사용할 수 있습니다.
+
+```bash
+npx portki help
+```
+
+또는 전역 설치:
+
+```bash
+npm install -g portki
+portki help
+```
+
+## GitHub Releases
+
+`public` 브랜치에서는 GitHub Release를 만들 수 있습니다.
+
+- `v*` 태그를 `public` 브랜치 커밋에 push하면 Release가 자동으로 생성됩니다.
+- Actions의 수동 실행(`workflow_dispatch`)으로도 Release를 만들 수 있습니다.
+- Release에는 자동 생성된 노트와 함께 소스 아카이브(`.tar.gz`, `.zip`), npm 패키지 tarball(`portki-<version>.tgz`), SHA256 체크섬 파일이 첨부됩니다.
+- npm publish workflow를 함께 켜두면 같은 `v*` 태그에서 npm 패키지도 배포할 수 있습니다.
+
+기본 절차:
+
+```bash
+git checkout public
+git pull origin public
+
+# package.json version과 태그는 일치해야 합니다.
+git tag v0.1.0
+git push origin public --follow-tags
+```
+
+npm 배포까지 하려면 저장소 Secrets에 `NPM_TOKEN`을 추가해야 합니다.
+
 ## 권장 실행 환경 
 **(2026년 3월 7일 기준)**
 | 환경 | 권장 모델 | (Effort (Thinking) Level) | 설정 지침 |

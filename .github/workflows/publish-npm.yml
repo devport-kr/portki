@@ -1,0 +1,114 @@
+name: Publish npm Package
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Branch or commit to publish from"
+        required: true
+        default: "public"
+      tag:
+        description: "Optional version tag to validate, for example v0.2.0"
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish-${{ github.event_name == 'push' && github.ref_name || inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Resolve publish metadata
+        id: meta
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_TAG: ${{ github.ref_name }}
+          PUSH_SHA: ${{ github.sha }}
+          INPUT_TARGET: ${{ inputs.target }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            TARGET_SHA="$PUSH_SHA"
+            VERSION_TAG="$PUSH_TAG"
+          else
+            TARGET_INPUT="${INPUT_TARGET:-public}"
+            git fetch origin "$TARGET_INPUT" --depth=1 || true
+
+            if git rev-parse --verify --quiet "$TARGET_INPUT" >/dev/null; then
+              TARGET_SHA="$(git rev-parse "$TARGET_INPUT")"
+            elif git rev-parse --verify --quiet "origin/$TARGET_INPUT" >/dev/null; then
+              TARGET_SHA="$(git rev-parse "origin/$TARGET_INPUT")"
+            else
+              echo "Unable to resolve publish target: $TARGET_INPUT" >&2
+              exit 1
+            fi
+
+            VERSION_TAG="${INPUT_TAG:-}"
+          fi
+
+          git fetch origin public --depth=1
+          if git merge-base --is-ancestor "$TARGET_SHA" origin/public; then
+            ELIGIBLE=true
+          else
+            ELIGIBLE=false
+          fi
+
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          if [[ -n "$VERSION_TAG" ]]; then
+            EXPECTED_VERSION="${VERSION_TAG#v}"
+            if [[ "$PACKAGE_VERSION" != "$EXPECTED_VERSION" ]]; then
+              echo "package.json version ($PACKAGE_VERSION) does not match tag ($VERSION_TAG)" >&2
+              exit 1
+            fi
+          fi
+
+          {
+            echo "target_sha=$TARGET_SHA"
+            echo "eligible=$ELIGIBLE"
+            echo "package_version=$PACKAGE_VERSION"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Skip non-public publish target
+        if: steps.meta.outputs.eligible != 'true'
+        run: |
+          echo "Publish target ${{ steps.meta.outputs.target_sha }} is not contained in origin/public."
+          echo "Skipping npm publish."
+
+      - name: Install dependencies
+        if: steps.meta.outputs.eligible == 'true'
+        run: npm ci
+
+      - name: Run tests
+        if: steps.meta.outputs.eligible == 'true'
+        run: npm test
+
+      - name: Build package
+        if: steps.meta.outputs.eligible == 'true'
+        run: npm run build
+
+      - name: Publish to npm
+        if: steps.meta.outputs.eligible == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish

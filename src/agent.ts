@@ -1,5 +1,5 @@
 /**
- * src/agent.ts — devport-agent tool interface
+ * src/agent.ts — portki public CLI
  *
  * Called by the AI agent (Claude Code, opencode, etc.) as a tool.
  * The AI IS the intelligence. This script handles the deterministic pipeline:
@@ -28,6 +28,7 @@
 
 import path from "node:path";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 
 import { loadEnvFiles } from "./shared/load-env";
 import { runIngest } from "./ingestion/run";
@@ -504,8 +505,8 @@ function printHelp(): void {
   process.stderr.write(
     [
       "",
-      "devport-agent — tool interface for AI agents (Claude Code, opencode, etc.)",
-      "The AI is the intelligence. This script handles the deterministic pipeline steps.",
+      "portki — public CLI for generating Korean Markdown wikis from GitHub repositories",
+      "Run as an installed package with `portki <command>` or from source with `npx tsx src/agent.ts <command>`.",
       "",
       "Commands:",
       "  ingest   Snapshot a GitHub repo and emit the ingest artifact",
@@ -553,26 +554,26 @@ function printHelp(): void {
       "            --delete_snapshot          delete snapshot directory after successful finalize",
       "",
       "First-run workflow (monolithic):",
-      "  1. npx tsx src/agent.ts ingest --repo owner/repo --out artifact.json",
+      "  1. portki ingest --repo owner/repo --out artifact.json",
       "  2. AI reads artifact.json + files under snapshot_path, generates GroundedAcceptedOutput",
-      "  3. npx tsx src/agent.ts package --input accepted-output.json --advance_baseline",
+      "  3. portki package --input accepted-output.json --advance_baseline",
       "",
       "Chunked workflow (higher quality, section-at-a-time):",
-      "  1. npx tsx src/agent.ts ingest --repo owner/repo --out artifact.json",
-      "  2. npx tsx src/agent.ts plan-sections --artifact artifact.json --out plan-context.json",
+      "  1. portki ingest --repo owner/repo --out artifact.json",
+      "  2. portki plan-sections --artifact artifact.json --out plan-context.json",
       "  3. AI reads plan-context.json + README + code, generates section-plan.json",
-      "  4. npx tsx src/agent.ts validate-plan --input section-plan.json --context plan-context.json --out section-plan.json",
+      "  4. portki validate-plan --input section-plan.json --context plan-context.json --out section-plan.json",
       "  5. For each section: AI reads focus files, writes section-N.json",
-      "     npx tsx src/agent.ts persist-section --plan section-plan.json --section sec-N --input section-N.json",
-      "  6. npx tsx src/agent.ts finalize --plan section-plan.json --advance_baseline",
+      "     portki persist-section --plan section-plan.json --section sec-N --input section-N.json",
+      "  6. portki finalize --plan section-plan.json --advance_baseline",
       "     → writes README.md + section markdown files under devport-output/wiki/{owner}/{repo}/",
       "",
       "Incremental update workflow:",
-      "  1. npx tsx src/agent.ts detect --repo owner/repo",
+      "  1. portki detect --repo owner/repo",
       "     → noop: done. incremental/full-rebuild: continue below",
-      "  2. npx tsx src/agent.ts ingest --repo owner/repo --out artifact.json",
+      "  2. portki ingest --repo owner/repo --out artifact.json",
       "  3. AI regenerates (all or only impacted sections) → accepted-output.json",
-      "  4. npx tsx src/agent.ts package --input accepted-output.json --advance_baseline",
+      "  4. portki package --input accepted-output.json --advance_baseline",
       "",
     ].join("\n"),
   );
@@ -580,7 +581,7 @@ function printHelp(): void {
 
 // ── entry point ──────────────────────────────────────────────────────────────
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   loadEnvFiles();
 
   const argv = process.argv.slice(2);
@@ -597,7 +598,7 @@ async function main(): Promise<void> {
   if (command === "ingest") { await ingestCommand(flags); return; }
   if (command === "detect") { await detectCommand(flags); return; }
   if (command === "package") { await packageCommand(flags); return; }
-if (command === "plan-sections") { await planSectionsCommand(flags); return; }
+  if (command === "plan-sections") { await planSectionsCommand(flags); return; }
   if (command === "validate-plan") { await validatePlanCommand(flags); return; }
   if (command === "persist-section") { await persistSectionCommand(flags); return; }
   if (command === "finalize") { await finalizeCommand(flags); return; }
@@ -607,7 +608,18 @@ if (command === "plan-sections") { await planSectionsCommand(flags); return; }
   process.exitCode = 1;
 }
 
-main().catch((error) => {
-  process.stderr.write(`\n[devport-agent] error: ${String(error)}\n`);
-  process.exitCode = 1;
-});
+function isDirectExecution(): boolean {
+  const entry = process.argv[1];
+  if (!entry) {
+    return false;
+  }
+
+  return import.meta.url === pathToFileURL(entry).href;
+}
+
+if (isDirectExecution()) {
+  main().catch((error) => {
+    process.stderr.write(`\n[devport-agent] error: ${String(error)}\n`);
+    process.exitCode = 1;
+  });
+}

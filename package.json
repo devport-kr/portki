@@ -1,10 +1,46 @@
 {
   "name": "portki",
   "version": "0.1.0",
+  "description": "Public markdown-only CLI for generating Korean repository wikis from GitHub codebases",
   "type": "module",
-  "private": true,
+  "private": false,
+  "bin": {
+    "portki": "./dist/cli.cjs"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".env.example"
+  ],
   "scripts": {
+    "build": "node scripts/build.mjs",
+    "prepack": "npm run build",
     "test": "vitest run"
+  },
+  "keywords": [
+    "wiki",
+    "github",
+    "korean",
+    "cli",
+    "documentation",
+    "devport"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/devport-kr/portki.git"
+  },
+  "homepage": "https://github.com/devport-kr/portki",
+  "bugs": {
+    "url": "https://github.com/devport-kr/portki/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@dqbd/tiktoken": "^1.0.22",
@@ -13,11 +49,11 @@
     "minisearch": "^7.2.0",
     "p-queue": "^9.1.0",
     "tar": "^7.5.9",
-    "tree-sitter": "^0.25.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/tar": "^6.1.13",
+    "esbuild": "^0.25.10",
     "tsx": "^4.20.4",
     "vitest": "^2.1.1"
   }
