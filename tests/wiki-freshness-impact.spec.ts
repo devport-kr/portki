@@ -57,6 +57,60 @@ describe("freshness impact", () => {
     expect(evidence[0].repoPaths).toContain("README.md");
   });
 
+  it("falls back to global sourceDocs when section-level evidence is absent", () => {
+    const citationlessOutput = {
+      ingest_run_id: "ingest-2",
+      repo_ref: "acme/widget",
+      commit_sha: "0123456789abcdef0123456789abcdef01234567",
+      section_count: 1,
+      subsection_count: 3,
+      total_korean_chars: 4000,
+      source_doc_count: 2,
+      trend_fact_count: 0,
+      draft: {
+        artifactType: "wiki-draft",
+        repoFullName: "acme/widget",
+        commitSha: "0123456789abcdef0123456789abcdef01234567",
+        generatedAt: "2026-02-22T09:00:00.000Z",
+        overviewKo: "개요 설명이며 입문자 기준으로 구조를 정리합니다.",
+        sourceDocs: [
+          { sourceId: "src-1", path: "README.md" },
+          { sourceId: "src-2", path: "docs/guide.md" },
+        ],
+        sections: [
+          {
+            sectionId: "sec-1",
+            titleKo: "프로젝트 개요",
+            summaryKo: "요약 설명이며 실행 흐름 핵심을 안내합니다.",
+            subsections: [
+              {
+                sectionId: "sec-1",
+                subsectionId: "sub-1-1",
+                titleKo: "진입점",
+                bodyKo: "README.md 기반으로 진입 경로를 설명합니다.",
+              },
+              {
+                sectionId: "sec-1",
+                subsectionId: "sub-1-2",
+                titleKo: "핵심 모듈",
+                bodyKo: "핵심 모듈 연결을 설명합니다.",
+              },
+              {
+                sectionId: "sec-1",
+                subsectionId: "sub-1-3",
+                titleKo: "구성",
+                bodyKo: "구성 문서를 설명합니다.",
+              },
+            ],
+          },
+        ],
+      },
+    };
+
+    const evidence = extractSectionEvidenceFromAcceptedOutput(citationlessOutput as never);
+    expect(evidence[0].repoPaths).toEqual(["docs/guide.md", "README.md"]);
+  });
+
   it("maps direct path matches to deterministic sectionId ordering", () => {
     const result = mapChangedPathsToImpactedSections({
       changed_paths: ["src/ui/page.tsx", "src/core/service.ts"],

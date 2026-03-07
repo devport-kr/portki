@@ -3,15 +3,15 @@
  *
  * Called by the AI agent (Claude Code, opencode, etc.) as a tool.
  * The AI IS the intelligence. This script handles the deterministic pipeline:
- * repo snapshot, change detection, delivery packaging, freshness baseline.
+ * repo snapshot, change detection, markdown export, freshness baseline.
  *
  * Commands:
  *   ingest           Snapshot a GitHub repo and emit the ingest artifact
  *   detect           Detect what changed since the last delivery
- *   package          Validate AI-generated output, write delivery.json
+ *   package          Validate AI-generated output, write markdown wiki files
  *   plan-sections    Analyze repo and produce section plan with focus paths
- *   persist-section  Validate and persist a single section to PostgreSQL
- *   finalize         Cross-validate all sections, update snapshot/draft tables
+ *   persist-section  Validate and persist a single section to the local session
+ *   finalize         Cross-validate all sections, write the final markdown wiki
  *
  * Typical first-run workflow:
  *   1. npx tsx src/agent.ts ingest --repo owner/repo --out artifact.json
@@ -37,15 +37,14 @@ import { detectRepoFreshness } from "./freshness/detect";
 import { mapChangedPathsToImpactedSections } from "./freshness/impact-map";
 import { extractSectionEvidenceFromAcceptedOutput } from "./freshness/section-evidence";
 import { loadFreshnessState, saveFreshnessState } from "./freshness/state";
-import { createPool, loadDbConfig, ensurePgVector, ensureHnswIndex } from "./persistence/db";
 import { planContext } from "./chunked/plan-sections";
 import { validatePlan } from "./chunked/validate-plan";
 import { SectionOutputSchema, SectionPlanOutputSchema, PlanContextSchema } from "./contracts/chunked-generation";
 import { validateSection } from "./chunked/validate-section";
-import { persistSectionToDb } from "./chunked/persist-section";
 import { loadSession, initSession, saveSession, markSectionPersisted, sessionPathForRepo } from "./chunked/session";
 import { finalize } from "./chunked/finalize";
 import { ingestRunArtifactSchema } from "./ingestion/types";
+import { writeMarkdownBundle } from "./output/markdown";
 
 // ── CLI arg parsing ─────────────────────────────────────────────────────────
 
@@ -159,7 +158,9 @@ async function detectCommand(flags: Record<string, string>): Promise<void> {
 
   if (!baseline) {
     process.stderr.write(`  → no baseline — full rebuild required\n`);
-    process.stderr.write(`    (run \`package --advance_baseline\` after first generation)\n`);
+    process.stderr.write(
+      `    (run \`package --advance_baseline\` or \`finalize --advance_baseline\` after first generation)\n`,
+    );
     process.stdout.write(
       `${JSON.stringify(
         { status: "full-rebuild", reason: "BASELINE_MISSING", repo_ref: repoRef, changed_paths: [], impacted_section_ids: [] },
@@ -226,7 +227,7 @@ async function detectCommand(flags: Record<string, string>): Promise<void> {
 // ── package ──────────────────────────────────────────────────────────────────
 
 async function packageCommand(flags: Record<string, string>): Promise<void> {
-  const outDir = flags["out_dir"] ?? "devport-output/delivery";
+  const outDir = flags["out_dir"] ?? "devport-output/wiki";
   const inputFile = flags["input"];
   const advanceBaseline = flags["advance_baseline"] === "true";
   const statePath = flags["state_path"] ?? "devport-output/freshness/state.json";
@@ -250,21 +251,14 @@ async function packageCommand(flags: Record<string, string>): Promise<void> {
 
   const glossaryCount = Array.isArray(envelope.glossary) ? envelope.glossary.length : 0;
   const sectionCount = Array.isArray(envelope.sections) ? envelope.sections.length : 0;
-
-  const [owner, repoName] = acceptedOutput.repo_ref.split("/");
-  if (!owner || !repoName) {
-    throw new Error(`repo_ref must be owner/repo, got: ${acceptedOutput.repo_ref}`);
-  }
-
-  const deliveryDir = path.resolve(outDir, owner, repoName);
-  const deliveryPath = path.join(deliveryDir, "delivery.json");
-  await mkdir(deliveryDir, { recursive: true });
-  await writeFile(deliveryPath, `${JSON.stringify(envelope, null, 2)}\n`, "utf8");
+  const markdownBundle = await writeMarkdownBundle(acceptedOutput, {
+    outDir,
+  });
 
   process.stderr.write(
-    `  ✓ ${sectionCount} sections, glossary: ${glossaryCount} terms, provenance attached\n`,
+    `  ✓ ${sectionCount} sections validated, glossary: ${glossaryCount} terms\n`,
   );
-  process.stderr.write(`  saved → ${deliveryPath}\n`);
+  process.stderr.write(`  markdown → ${markdownBundle.outputDir}\n`);
 
   if (advanceBaseline) {
     try {
@@ -289,7 +283,7 @@ async function packageCommand(flags: Record<string, string>): Promise<void> {
     } catch (err) {
       process.stderr.write(
         `  ⚠ freshness baseline not saved: ${String(err)}\n` +
-        `    delivery.json is written; re-run package --advance_baseline after fixing citations\n`,
+        `    markdown wiki is written; re-run package --advance_baseline after fixing section evidence paths\n`,
       );
     }
   }
@@ -421,69 +415,30 @@ async function persistSectionCommand(flags: Record<string, string>): Promise<voi
     process.stderr.write(`  created new session: ${session.sessionId}\n`);
   }
 
-  const pool = createPool(loadDbConfig());
-
-  try {
-    await ensurePgVector(pool);
-    await ensureHnswIndex(pool);
-
-    const projectResult = await pool.query<{ id: number; external_id: string }>(
-      "SELECT id, external_id FROM projects WHERE LOWER(full_name) = LOWER($1)",
-      [plan.repoFullName],
-    );
-
-    if (projectResult.rows.length === 0) {
-      throw new Error(
-        `Project not found in database for repo_ref: ${plan.repoFullName}. ` +
-        `Ensure the project exists in the projects table with a matching full_name.`,
-      );
-    }
-
-    const { external_id: projectExternalId } = projectResult.rows[0];
-
-    const apiKey = process.env["OPENAI_API_KEY"];
-    if (!apiKey) {
-      throw new Error("OPENAI_API_KEY environment variable is required for persist-section command");
-    }
-
-    const { default: OpenAI } = await import("openai");
-    const openai = new OpenAI({ apiKey });
-
-    const result = await persistSectionToDb(sectionOutput, {
-      pool,
-      openai,
-      projectExternalId,
-      commitSha: plan.commitSha,
-    });
-
-    let koreanChars = sectionOutput.summaryKo.length;
-    for (const sub of sectionOutput.subsections) {
-      koreanChars += sub.bodyKo.length;
-    }
-
-    session = markSectionPersisted(session, sectionId, {
-      sectionOutputPath: path.resolve(inputFile),
-      chunksInserted: result.chunksInserted,
-      claimCount: 0,
-      citationCount: 0,
-      subsectionCount: sectionOutput.subsections.length,
-      koreanChars,
-    });
-
-    await saveSession(sessionPath, session);
-
-    process.stderr.write(
-      `  ✓ ${sectionId}: ${result.chunksInserted} chunks embedded, ` +
-      `${sectionOutput.sourcePaths.length} source paths\n`,
-    );
-    process.stderr.write(`  session → ${sessionPath}\n`);
-
-    const totalSections = Object.keys(session.sections).length;
-    const persistedCount = Object.values(session.sections).filter((s) => s.status === "persisted").length;
-    process.stderr.write(`  progress: ${persistedCount}/${totalSections} sections persisted\n`);
-  } finally {
-    await pool.end();
+  let koreanChars = sectionOutput.summaryKo.length;
+  for (const sub of sectionOutput.subsections) {
+    koreanChars += sub.bodyKo.length;
   }
+
+  session = markSectionPersisted(session, sectionId, {
+    sectionOutputPath: path.resolve(inputFile),
+    chunksInserted: 0,
+    claimCount: 0,
+    citationCount: 0,
+    subsectionCount: sectionOutput.subsections.length,
+    koreanChars,
+  });
+
+  await saveSession(sessionPath, session);
+
+  process.stderr.write(
+    `  ✓ ${sectionId}: locally validated, ${sectionOutput.sourcePaths.length} source paths\n`,
+  );
+  process.stderr.write(`  session → ${sessionPath}\n`);
+
+  const totalSections = Object.keys(session.sections).length;
+  const persistedCount = Object.values(session.sections).filter((s) => s.status === "persisted").length;
+  process.stderr.write(`  progress: ${persistedCount}/${totalSections} sections ready\n`);
 }
 
 // ── finalize ─────────────────────────────────────────────────────────────────
@@ -494,6 +449,7 @@ async function finalizeCommand(flags: Record<string, string>): Promise<void> {
   const advanceBaseline = flags["advance_baseline"] === "true";
   const statePath = flags["state_path"] ?? "devport-output/freshness/state.json";
   const deleteSnapshot = flags["delete_snapshot"] === "true";
+  const outDir = flags["out_dir"] ?? "devport-output/wiki";
 
   const planRaw = await readFile(path.resolve(planFile), "utf8");
   const plan = SectionPlanOutputSchema.parse(JSON.parse(planRaw));
@@ -517,6 +473,7 @@ async function finalizeCommand(flags: Record<string, string>): Promise<void> {
     advanceBaseline,
     statePath,
     deleteSnapshot,
+    outDir,
   });
 
   process.stderr.write(
@@ -525,6 +482,7 @@ async function finalizeCommand(flags: Record<string, string>): Promise<void> {
     `${result.totalSourceDocs} source docs, ${result.totalTrendFacts} trend facts, ` +
     `${fmtNum(result.totalKoreanChars)} Korean chars\n`,
   );
+  process.stderr.write(`  markdown → ${result.outputDir} (${result.filesWritten.length} files)\n`);
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -563,9 +521,9 @@ function printHelp(): void {
       "           stdout: { status, changed_paths, impacted_section_ids, ... }",
       "           status values: noop | incremental | full-rebuild",
       "",
-      "  package  Validate AI-generated GroundedAcceptedOutput, write delivery.json",
+      "  package  Validate AI-generated GroundedAcceptedOutput, write markdown wiki files",
       "           --input accepted-output.json  (optional, reads stdin if omitted)",
-      "           --out_dir                     (default: devport-output/delivery)",
+      "           --out_dir                     (default: devport-output/wiki)",
       "           --quality_gate_level          standard|strict (default from DEVPORT_QUALITY_GATE_LEVEL)",
       "           --advance_baseline            save freshness state for future detect",
       "           --state_path                  (default: devport-output/freshness/state.json)",
@@ -579,21 +537,20 @@ function printHelp(): void {
       "                 --context plan-context.json  (required)",
       "                 --out section-plan.json      (optional, prints to stdout if omitted)",
       "",
-      "  persist-section  Validate and persist a single section to the database",
+      "  persist-section  Validate a single section and register it in the local session",
       "                   --plan section-plan.json   (required)",
       "                   --section sec-1            (required)",
       "                   --input section-1.json     (required)",
       "                   --quality_gate_level       standard|strict (default from DEVPORT_QUALITY_GATE_LEVEL)",
       "                   --session session.json     (optional, auto-derived from repo name)",
-      "                   Requires: OPENAI_API_KEY, DEVPORT_DB_* env vars",
       "",
-      "  finalize  Cross-validate all sections and update snapshot/draft tables",
+      "  finalize  Cross-validate all sections and write the final markdown wiki bundle",
       "            --plan section-plan.json   (required)",
       "            --session session.json     (optional, auto-derived from repo name)",
+      "            --out_dir                  (default: devport-output/wiki)",
       "            --advance_baseline         save freshness state for future detect",
       "            --state_path               (default: devport-output/freshness/state.json)",
       "            --delete_snapshot          delete snapshot directory after successful finalize",
-      "            Requires: OPENAI_API_KEY, DEVPORT_DB_* env vars",
       "",
       "First-run workflow (monolithic):",
       "  1. npx tsx src/agent.ts ingest --repo owner/repo --out artifact.json",
@@ -608,6 +565,7 @@ function printHelp(): void {
       "  5. For each section: AI reads focus files, writes section-N.json",
       "     npx tsx src/agent.ts persist-section --plan section-plan.json --section sec-N --input section-N.json",
       "  6. npx tsx src/agent.ts finalize --plan section-plan.json --advance_baseline",
+      "     → writes README.md + section markdown files under devport-output/wiki/{owner}/{repo}/",
       "",
       "Incremental update workflow:",
       "  1. npx tsx src/agent.ts detect --repo owner/repo",

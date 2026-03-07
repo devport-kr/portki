@@ -1,7 +1,7 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { finalize } from "../src/chunked/finalize";
 import { planContext } from "../src/chunked/plan-sections";
@@ -145,6 +145,9 @@ describe("quality-first e2e smoke", () => {
   it("finalize reports section/subsection counts without claim/citation counters", async () => {
     const root = mkdtempSync(join(tmpdir(), "devport-finalize-smoke-"));
     const sectionOutputPath = join(root, "section-1-output.json");
+    writeFileSync(join(root, "README.md"), "# widget\n", "utf8");
+    mkdirSync(join(root, "__devport__", "trends"), { recursive: true });
+    writeFileSync(join(root, "__devport__", "trends", "releases.json"), "{}", "utf8");
 
     const longBody =
       "README.md 경로와 __devport__/trends/releases.json 경로를 기준으로 실행 흐름을 상세히 설명합니다. " +
@@ -244,35 +247,17 @@ describe("quality-first e2e smoke", () => {
       crossReferences: [],
     };
 
-    const transactionalQuery = vi.fn(async (sql: string) => {
-      if (sql.includes("SELECT id FROM wiki_drafts")) {
-        return { rows: [] };
-      }
-      return { rows: [] };
-    });
-
-    const pool = {
-      query: vi.fn(async (sql: string) => {
-        if (sql.includes("FROM projects")) {
-          return { rows: [{ id: 1, external_id: "proj-ext-1" }] };
-        }
-        return { rows: [] };
-      }),
-      connect: vi.fn(async () => ({
-        query: transactionalQuery,
-        release: vi.fn(),
-      })),
-    };
-
     const result = await finalize(session as never, plan as never, {
-      pool: pool as never,
-      openai: {} as never,
       advanceBaseline: false,
       statePath: join(root, "state.json"),
+      outDir: root,
     });
 
     expect((result as { totalClaims?: number }).totalClaims).toBeUndefined();
     expect((result as { totalCitations?: number }).totalCitations).toBeUndefined();
+    expect(result.filesWritten).toEqual(["README.md", "01-sec-1.md"]);
+    expect(readFileSync(join(result.outputDir, "README.md"), "utf8")).toContain("# acme/widget");
+    expect(readFileSync(join(result.outputDir, "01-sec-1.md"), "utf8")).toContain("## 참고 소스");
 
     rmSync(root, { recursive: true, force: true });
   });

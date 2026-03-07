@@ -1,5 +1,5 @@
 {
-  "name": "devport-agent",
+  "name": "portki",
   "version": "0.1.0",
   "type": "module",
   "private": true,
@@ -11,15 +11,12 @@
     "@octokit/rest": "^22.0.1",
     "ajv": "^8.18.0",
     "minisearch": "^7.2.0",
-    "openai": "^6.22.0",
     "p-queue": "^9.1.0",
-    "pg": "^8.18.0",
     "tar": "^7.5.9",
     "tree-sitter": "^0.25.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@types/pg": "^8.16.0",
     "@types/tar": "^6.1.13",
     "tsx": "^4.20.4",
     "vitest": "^2.1.1"

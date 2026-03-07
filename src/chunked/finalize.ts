@@ -13,11 +13,13 @@ import {
 } from "../orchestration/package-delivery";
 import { extractSectionEvidenceFromAcceptedOutput } from "../freshness/section-evidence";
 import { loadFreshnessState, saveFreshnessState } from "../freshness/state";
+import { writeMarkdownBundle } from "../output/markdown";
 
 export interface FinalizeOptions {
   advanceBaseline: boolean;
   statePath: string;
   deleteSnapshot?: boolean;
+  outDir?: string;
 }
 
 export interface FinalizeResult {
@@ -26,6 +28,8 @@ export interface FinalizeResult {
   totalSourceDocs: number;
   totalTrendFacts: number;
   totalKoreanChars: number;
+  outputDir: string;
+  filesWritten: string[];
 }
 
 /**
@@ -186,7 +190,12 @@ export async function finalize(
   // 4. Assemble synthetic accepted output (needed for freshness baseline)
   const acceptedOutput = assembleAcceptedOutput(plan, sectionOutputs);
 
-  // 5. Advance freshness baseline if flagged
+  // 5. Write markdown bundle
+  const markdownBundle = await writeMarkdownBundle(acceptedOutput, {
+    outDir: options.outDir,
+  });
+
+  // 6. Advance freshness baseline if flagged
   if (advanceBaseline) {
     try {
       const evidence = extractSectionEvidenceFromAcceptedOutput(acceptedOutput);
@@ -223,6 +232,8 @@ export async function finalize(
     totalSourceDocs: acceptedOutput.source_doc_count,
     totalTrendFacts: acceptedOutput.trend_fact_count,
     totalKoreanChars: acceptedOutput.total_korean_chars,
+    outputDir: markdownBundle.outputDir,
+    filesWritten: markdownBundle.files.map((file) => file.relativePath),
   };
 
   if (options.deleteSnapshot) {

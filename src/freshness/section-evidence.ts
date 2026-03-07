@@ -56,6 +56,16 @@ function buildSectionEvidenceFromAcceptedOutput(
       }
     }
 
+    if (sectionPaths.size === 0) {
+      const globalSourceDocs = acceptedOutput.draft.sourceDocs ?? [];
+      for (const sourceDoc of globalSourceDocs) {
+        const normalized = normalizeRepoPath(sourceDoc.path);
+        if (normalized.length > 0) {
+          sectionPaths.add(normalized);
+        }
+      }
+    }
+
     if (sectionPaths.size > 0) {
       pathsBySection.set(sectionId, sectionPaths);
     }
