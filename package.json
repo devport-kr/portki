@@ -1,11 +1,11 @@
 {
-  "name": "portki",
+  "name": "@devport-kr/portki",
   "version": "0.1.0",
   "description": "Public markdown-only CLI for generating Korean repository wikis from GitHub codebases",
   "type": "module",
   "private": false,
   "bin": {
-    "portki": "./dist/cli.cjs"
+    "portki": "dist/cli.cjs"
   },
   "files": [
     "dist",
