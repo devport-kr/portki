@@ -46,6 +46,11 @@ import { loadSession, initSession, saveSession, markSectionPersisted, sessionPat
 import { finalize } from "./chunked/finalize";
 import { ingestRunArtifactSchema } from "./ingestion/types";
 import { writeMarkdownBundle } from "./output/markdown";
+import { wikiCommand } from "./commands/wiki";
+import { statusCommand } from "./commands/status";
+import { resumeCommand } from "./commands/resume";
+import { doctorCommand } from "./commands/doctor";
+import { installCommand } from "./commands/install";
 
 // ── CLI arg parsing ─────────────────────────────────────────────────────────
 
@@ -56,7 +61,7 @@ function getQualityGateLevel(env: NodeJS.ProcessEnv): QualityGateLevel {
   return val === "standard" || val === "strict" ? val : "strict";
 }
 
-function parseFlags(argv: string[]): Record<string, string> {
+export function parseFlags(argv: string[]): Record<string, string> {
   const flags: Record<string, string> = {};
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -86,13 +91,13 @@ function parseRepo(repoFlag: string, refFlag?: string): { repo: string; ref?: st
   return { repo: repoFlag, ref: refFlag };
 }
 
-function requireFlag(flags: Record<string, string>, name: string): string {
+export function requireFlag(flags: Record<string, string>, name: string): string {
   const val = flags[name];
   if (!val) throw new Error(`--${name} is required`);
   return val;
 }
 
-function fmtNum(n: number): string {
+export function fmtNum(n: number): string {
   return n.toLocaleString("en-US");
 }
 
@@ -508,72 +513,57 @@ function printHelp(): void {
       "portki — public CLI for generating Korean Markdown wikis from GitHub repositories",
       "Run as an installed package with `portki <command>` or from source with `npx tsx src/agent.ts <command>`.",
       "",
-      "Commands:",
-      "  ingest   Snapshot a GitHub repo and emit the ingest artifact",
-      "           --repo owner/repo     (required)",
-      "           --ref  branch|sha     (optional, uses default branch if omitted)",
-      "           --out  artifact.json  (optional, prints to stdout if omitted)",
-      "           --snapshot_root       (default: devport-output/snapshots)",
-      "           --force_rebuild       (re-download even if cache is valid)",
+      "Quick start:",
+      "  portki owner/repo              Ingest repo + generate handoff.md for AI agents",
       "",
-      "  detect   Detect what changed since the last delivery",
-      "           --repo owner/repo     (required)",
-      "           --state_path          (default: devport-output/freshness/state.json)",
-      "           stdout: { status, changed_paths, impacted_section_ids, ... }",
-      "           status values: noop | incremental | full-rebuild",
+      "High-level commands:",
+      "  owner/repo     Ingest a repo, generate plan context and handoff.md",
+      "  status         Show pipeline progress          portki status owner/repo",
+      "  resume         Regenerate handoff from state    portki resume owner/repo",
+      "  doctor         Environment health check         portki doctor",
+      "  install        Install agent adapter            portki install --agent claude|codex|gemini",
       "",
-      "  package  Validate AI-generated GroundedAcceptedOutput, write markdown wiki files",
-      "           --input accepted-output.json  (optional, reads stdin if omitted)",
-      "           --out_dir                     (default: devport-output/wiki)",
-      "           --quality_gate_level          standard|strict (default from DEVPORT_QUALITY_GATE_LEVEL)",
-      "           --advance_baseline            save freshness state for future detect",
-      "           --state_path                  (default: devport-output/freshness/state.json)",
+      "Low-level commands:",
+      "  ingest           Snapshot a GitHub repo and emit the ingest artifact",
+      "                   --repo owner/repo     (required)",
+      "                   --ref  branch|sha     (optional, uses default branch if omitted)",
+      "                   --out  artifact.json  (optional, prints to stdout if omitted)",
+      "                   --snapshot_root       (default: devport-output/snapshots)",
+      "                   --force_rebuild       (re-download even if cache is valid)",
       "",
-      "  plan-sections  Analyze repo and produce planning context for AI section generation",
-      "                 --artifact artifact.json  (required)",
-      "                 --out plan-context.json   (optional, prints to stdout if omitted)",
+      "  detect           Detect what changed since the last delivery",
+      "                   --repo owner/repo     (required)",
+      "                   --state_path          (default: devport-output/freshness/state.json)",
       "",
-      "  validate-plan  Validate an AI-generated section plan against the schema",
-      "                 --input section-plan.json    (required)",
-      "                 --context plan-context.json  (required)",
-      "                 --out section-plan.json      (optional, prints to stdout if omitted)",
+      "  package          Validate AI-generated output, write markdown wiki files",
+      "                   --input accepted-output.json  (optional, reads stdin if omitted)",
+      "                   --out_dir                     (default: devport-output/wiki)",
+      "                   --quality_gate_level          standard|strict",
+      "                   --advance_baseline            save freshness state for future detect",
       "",
-      "  persist-section  Validate a single section and register it in the local session",
+      "  plan-sections    Analyze repo and produce planning context",
+      "                   --artifact artifact.json  (required)",
+      "                   --out plan-context.json   (optional, prints to stdout if omitted)",
+      "",
+      "  validate-plan    Validate an AI-generated section plan",
+      "                   --input section-plan.json    (required)",
+      "                   --context plan-context.json  (required)",
+      "                   --out section-plan.json      (optional)",
+      "",
+      "  persist-section  Validate a single section and register in session",
       "                   --plan section-plan.json   (required)",
       "                   --section sec-1            (required)",
       "                   --input section-1.json     (required)",
-      "                   --quality_gate_level       standard|strict (default from DEVPORT_QUALITY_GATE_LEVEL)",
-      "                   --session session.json     (optional, auto-derived from repo name)",
       "",
-      "  finalize  Cross-validate all sections and write the final markdown wiki bundle",
-      "            --plan section-plan.json   (required)",
-      "            --session session.json     (optional, auto-derived from repo name)",
-      "            --out_dir                  (default: devport-output/wiki)",
-      "            --advance_baseline         save freshness state for future detect",
-      "            --state_path               (default: devport-output/freshness/state.json)",
-      "            --delete_snapshot          delete snapshot directory after successful finalize",
+      "  finalize         Cross-validate all sections and write final wiki",
+      "                   --plan section-plan.json   (required)",
+      "                   --advance_baseline         save freshness state",
       "",
-      "First-run workflow (monolithic):",
-      "  1. portki ingest --repo owner/repo --out artifact.json",
-      "  2. AI reads artifact.json + files under snapshot_path, generates GroundedAcceptedOutput",
-      "  3. portki package --input accepted-output.json --advance_baseline",
-      "",
-      "Chunked workflow (higher quality, section-at-a-time):",
-      "  1. portki ingest --repo owner/repo --out artifact.json",
-      "  2. portki plan-sections --artifact artifact.json --out plan-context.json",
-      "  3. AI reads plan-context.json + README + code, generates section-plan.json",
-      "  4. portki validate-plan --input section-plan.json --context plan-context.json --out section-plan.json",
-      "  5. For each section: AI reads focus files, writes section-N.json",
-      "     portki persist-section --plan section-plan.json --section sec-N --input section-N.json",
-      "  6. portki finalize --plan section-plan.json --advance_baseline",
-      "     → writes README.md + section markdown files under devport-output/wiki/{owner}/{repo}/",
-      "",
-      "Incremental update workflow:",
-      "  1. portki detect --repo owner/repo",
-      "     → noop: done. incremental/full-rebuild: continue below",
-      "  2. portki ingest --repo owner/repo --out artifact.json",
-      "  3. AI regenerates (all or only impacted sections) → accepted-output.json",
-      "  4. portki package --input accepted-output.json --advance_baseline",
+      "Recommended workflow:",
+      "  1. portki owner/repo                          → generates handoff.md",
+      "  2. AI reads handoff.md and follows step-by-step instructions",
+      "  3. portki status owner/repo                   → check progress anytime",
+      "  4. portki resume owner/repo                   → recover from interruptions",
       "",
     ].join("\n"),
   );
@@ -595,6 +585,13 @@ export async function main(): Promise<void> {
 
   const flags = parseFlags(argv.slice(1));
 
+  // High-level commands
+  if (command === "install") { await installCommand(flags); return; }
+  if (command === "doctor") { await doctorCommand(); return; }
+  if (command === "status") { await statusCommand(argv.slice(1)); return; }
+  if (command === "resume") { await resumeCommand(argv.slice(1)); return; }
+
+  // Low-level commands
   if (command === "ingest") { await ingestCommand(flags); return; }
   if (command === "detect") { await detectCommand(flags); return; }
   if (command === "package") { await packageCommand(flags); return; }
@@ -603,7 +600,13 @@ export async function main(): Promise<void> {
   if (command === "persist-section") { await persistSectionCommand(flags); return; }
   if (command === "finalize") { await finalizeCommand(flags); return; }
 
-  process.stderr.write(`[devport-agent] unknown command: ${command}\n`);
+  // Default: owner/repo pattern
+  if (command.includes("/")) {
+    await wikiCommand(command, flags);
+    return;
+  }
+
+  process.stderr.write(`[portki] unknown command: ${command}\n`);
   printHelp();
   process.exitCode = 1;
 }
