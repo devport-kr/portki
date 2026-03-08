@@ -19,17 +19,19 @@
 portki는 대표적인 CLI 기반 AI 에이전트들과 완벽하게 통합됩니다. 각 환경에 맞춘 최적화된 어댑터를 통해 위키 생성 파이프라인을 쉽게 구축할 수 있습니다.
 
 <div align="center" style="display: flex; justify-content: center; gap: 40px; margin: 20px 0;">
-  <a href="https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview" style="text-decoration:none; color:inherit; display:inline-flex; align-items:center; gap:8px;">
+  <a style="text-decoration:none; color:inherit; display:inline-flex; align-items:center; gap:8px;">
     <img src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/claude-color.svg" width="28" height="28" alt="Claude Code" />
     <b>Claude Code</b>
   </a>
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://platform.openai.com" style="text-decoration:none; color:inherit; display:inline-flex; align-items:center; gap:8px;">
+  <a 
+  style="text-decoration:none; color:inherit; display:inline-flex; align-items:center; gap:8px;">
     <img src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/codex-color.svg" width="28" height="28" alt="OpenAI Codex" />
     <b>Codex</b>
   </a>
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://ai.google.dev/" style="text-decoration:none; color:inherit; display:inline-flex; align-items:center; gap:8px;">
+  <a 
+  style="text-decoration:none; color:inherit; display:inline-flex; align-items:center; gap:8px;">
     <img src="https://unpkg.com/@lobehub/icons-static-svg@latest/icons/gemini-color.svg" width="28" height="28" alt="Gemini CLI" />
     <b>Gemini CLI</b>
   </a>
