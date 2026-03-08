@@ -1,5 +1,12 @@
 # portki (포트키)
 
+<p align="center">
+  <a href="https://www.npmjs.com/package/@devport-kr/portki"><img src="https://img.shields.io/npm/v/@devport-kr/portki?style=for-the-badge" alt="NPM version"></a>
+  <a href="https://github.com/devport-kr/portki/releases"><img src="https://img.shields.io/github/v/release/devport-kr/portki?include_prereleases&style=for-the-badge" alt="GitHub release"></a>
+  <a href="https://nodejs.org"><img src="https://img.shields.io/node/v/@devport-kr/portki?style=for-the-badge" alt="Node.js version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
+</p>
+
 **portki**는 **ports** + **wiki** 의 합성어로 ['포트키(Portkey)'](https://en.wikipedia.org/wiki/Magical_objects_in_Harry_Potter#Portkeys)처럼 순간이동해 다양한 AI 프로젝트를 만날 수 있는 Agent 입니다. [devport](https://devport.kr)의 [ports](https://devport.kr/ports)에 있는 모든 위키를 책임지고 있습니다.
 
 
