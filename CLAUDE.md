@@ -46,6 +46,23 @@ No GitHub token needed for public repos. `npm install` is the only prerequisite.
 
 For private repos only, set `GITHUB_TOKEN` in `.env`.
 
+### Database Connection (AWS SSM Port Forwarding)
+
+The PostgreSQL database is on an EC2 instance behind AWS SSM. The `.env` connects through `localhost:15432`.
+
+**Before running the first `persist-section`**, open the SSM tunnel as a background process:
+
+```bash
+aws ssm start-session \
+  --target "$DEVPORT_SSM_TARGET" \
+  --document-name AWS-StartPortForwardingSession \
+  --parameters '{"portNumber":["5432"],"localPortNumber":["15432"]}'
+```
+
+Start this **just before persisting** — the session will close if idle too long. Run it in the background and proceed immediately to `persist-section`.
+
+`DEVPORT_SSM_TARGET` is set in `.env`.
+
 ---
 
 ## Running in Parallel (Multiple Terminals)
