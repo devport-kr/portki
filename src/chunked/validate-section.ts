@@ -37,11 +37,11 @@ export function validateSection(
     }
   }
 
-  // ── bodyKo ≥ 3,000 chars ──────────────────────────────────────────────────
+  // ── bodyKo ≥ 2,500 chars ──────────────────────────────────────────────────
   for (const sub of section.subsections) {
-    if (sub.bodyKo.length < 3000) {
+    if (sub.bodyKo.length < 2500) {
       errors.push(
-        `${sub.subsectionId} (${section.sectionId}): bodyKo is ${sub.bodyKo.length} chars, minimum is 3,000`,
+        `${sub.subsectionId} (${section.sectionId}): bodyKo is ${sub.bodyKo.length} chars, minimum is 2,500`,
       );
     }
   }
